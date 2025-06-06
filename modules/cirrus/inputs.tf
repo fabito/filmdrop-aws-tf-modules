@@ -264,6 +264,12 @@ variable "cirrus_timestream_memory_store_retention_period_in_hours" {
   default     = 24
 }
 
+variable "deploy_api_gateway" {
+  description = "(Optional) Whether the Cirrus API Gateway and related resources should be deployed."
+  type        = bool
+  default     = true
+}
+
 variable "deploy_alarms" {
   description = <<-DESCRIPTION
   (Optional) Whether CloudWatch alarms should be deployed.
