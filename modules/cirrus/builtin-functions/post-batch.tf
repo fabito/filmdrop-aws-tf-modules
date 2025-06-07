@@ -122,9 +122,12 @@ resource "aws_lambda_function" "cirrus_post_batch" {
     }
   }
 
-  vpc_config {
-    security_group_ids = var.vpc_security_group_ids
-    subnet_ids         = var.vpc_subnet_ids
+  dynamic "vpc_config" {
+    for_each = var.vpc_subnet_ids != null && var.vpc_security_group_ids != null ? [true] : []
+    content {
+      security_group_ids = var.vpc_security_group_ids
+      subnet_ids         = var.vpc_subnet_ids
+    }
   }
 
   # Dependent on all IAM policies being created/attached to the role first

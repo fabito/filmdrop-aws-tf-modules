@@ -40,13 +40,13 @@ variable "vpc_id" {
 variable "vpc_subnet_ids" {
   description = "List of subnet ids in the target VPC that cirrus resources should be connected to."
   type        = list(string)
-  nullable    = false
+  nullable    = true
 }
 
 variable "vpc_security_group_ids" {
   description = "List of security groups in the target VPC that cirrus resources should use."
   type        = list(string)
-  nullable    = false
+  nullable    = true
 }
 
 variable "cirrus_lambda_zip_filepath" {

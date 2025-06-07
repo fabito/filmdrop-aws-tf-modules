@@ -119,9 +119,12 @@ resource "aws_lambda_function" "cirrus_api" {
     }
   }
 
-  vpc_config {
-    security_group_ids = var.vpc_security_group_ids
-    subnet_ids         = var.vpc_subnet_ids
+  dynamic "vpc_config" {
+    for_each = var.vpc_subnet_ids != null && var.vpc_security_group_ids != null ? [true] : []
+    content {
+      security_group_ids = var.vpc_security_group_ids
+      subnet_ids         = var.vpc_subnet_ids
+    }
   }
 }
 
@@ -231,7 +234,7 @@ resource "aws_api_gateway_integration" "cirrus_api_gateway_root_method_integrati
   resource_id             = aws_api_gateway_rest_api.cirrus_api_gateway[0].root_resource_id
   http_method             = aws_api_gateway_method.cirrus_api_gateway_root_method[0].http_method
   type                    = "AWS_PROXY"
-  uri                     = "arn:aws:apigateway:${data.aws_region.current.name}:lambda:path/2015-03-31/functions/${aws_lambda_function.cirrus_api[0].arn}/invocations"
+  uri                     = "arn:aws:apigateway:${data.aws_region.current.name}:lambda:path/2015-03-31/functions/${aws_lambda_function.cirrus_api.arn}/invocations"
   integration_http_method = "POST"
 }
 
@@ -256,7 +259,7 @@ resource "aws_api_gateway_integration" "cirrus_api_gateway_proxy_resource_method
   resource_id             = aws_api_gateway_resource.cirrus_api_gateway_proxy_resource[0].id
   http_method             = aws_api_gateway_method.cirrus_api_gateway_proxy_resource_method[0].http_method
   type                    = "AWS_PROXY"
-  uri                     = "arn:aws:apigateway:${data.aws_region.current.name}:lambda:path/2015-03-31/functions/${aws_lambda_function.cirrus_api[0].arn}/invocations"
+  uri                     = "arn:aws:apigateway:${data.aws_region.current.name}:lambda:path/2015-03-31/functions/${aws_lambda_function.cirrus_api.arn}/invocations"
   integration_http_method = "POST"
 }
 
@@ -414,52 +417,52 @@ resource "aws_cloudwatch_metric_alarm" "cirrus_api_gw_errors_critical_alarm" {
   }
 }
 
-resource "aws_api_gateway_domain_name" "cirrus_api_gateway_domain_name" {
-  count           = local.deploy_api_domain_name
-  certificate_arn = var.private_certificate_arn
-  domain_name     = var.domain_alias
+# resource "aws_api_gateway_domain_name" "cirrus_api_gateway_domain_name" {
+#   count           = local.deploy_api_domain_name
+#   certificate_arn = var.private_certificate_arn
+#   domain_name     = var.domain_alias
 
-  endpoint_configuration {
-    types = ["PRIVATE"]
-  }
+#   endpoint_configuration {
+#     types = ["PRIVATE"]
+#   }
 
-  policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": "*",
-      "Action": "execute-api:Invoke",
-      "Resource": "arn:aws:execute-api:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:/domainnames/*"
-    },
-    {
-      "Effect": "Deny",
-      "Principal": "*",
-      "Action": "execute-api:Invoke",
-      "Resource": "arn:aws:execute-api:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:/domainnames/*",
-      "Condition": {
-        "StringNotEquals": {
-          "aws:SourceVpce": "${aws_vpc_endpoint.cirrus_api_gateway_private[0].id}"
-        }
-      }
-    }
-  ]
-}
-EOF
-}
+#   policy = <<EOF
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Effect": "Allow",
+#       "Principal": "*",
+#       "Action": "execute-api:Invoke",
+#       "Resource": "arn:aws:execute-api:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:/domainnames/*"
+#     },
+#     {
+#       "Effect": "Deny",
+#       "Principal": "*",
+#       "Action": "execute-api:Invoke",
+#       "Resource": "arn:aws:execute-api:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:/domainnames/*",
+#       "Condition": {
+#         "StringNotEquals": {
+#           "aws:SourceVpce": "${aws_vpc_endpoint.cirrus_api_gateway_private[0].id}"
+#         }
+#       }
+#     }
+#   ]
+# }
+# EOF
+# }
 
-resource "aws_api_gateway_domain_name_access_association" "cirrus_api_gateway_domain_name_access_association" {
-  count                          = local.deploy_api_domain_name
-  access_association_source      = aws_vpc_endpoint.cirrus_api_gateway_private[0].id
-  access_association_source_type = "VPCE"
-  domain_name_arn                = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].arn
-}
+# resource "aws_api_gateway_domain_name_access_association" "cirrus_api_gateway_domain_name_access_association" {
+#   count                          = local.deploy_api_domain_name
+#   access_association_source      = aws_vpc_endpoint.cirrus_api_gateway_private[0].id
+#   access_association_source_type = "VPCE"
+#   domain_name_arn                = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].arn
+# }
 
-resource "aws_api_gateway_base_path_mapping" "cirrus_api_gateway_domain_mapping" {
-  count          = local.deploy_api_domain_name
-  domain_name    = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].domain_name
-  domain_name_id = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].domain_name_id
-  api_id         = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
-  stage_name     = aws_api_gateway_deployment.cirrus_api_gateway[0].stage_name
-}
+# resource "aws_api_gateway_base_path_mapping" "cirrus_api_gateway_domain_mapping" {
+#   count          = local.deploy_api_domain_name
+#   domain_name    = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].domain_name
+#   domain_name_id = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].domain_name_id
+#   api_id         = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
+#   stage_name     = aws_api_gateway_deployment.cirrus_api_gateway[0].stage_name
+# }
