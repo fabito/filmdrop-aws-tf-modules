@@ -211,6 +211,12 @@ variable "critical_sns_topic_arn" {
   type        = string
 }
 
+variable "deploy_api_gateway" {
+  description = "(Optional) Whether the Cirrus API Gateway and related resources should be deployed."
+  type        = bool
+  default     = true
+}
+
 variable "deploy_alarms" {
   type        = bool
   default     = true

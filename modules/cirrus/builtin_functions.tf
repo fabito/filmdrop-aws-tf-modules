@@ -39,6 +39,7 @@ module "builtin_functions" {
   cirrus_update_state_dead_letter_sqs_queue_arn    = module.base.cirrus_update_state_dead_letter_sqs_queue_arn
   warning_sns_topic_arn                            = var.warning_sns_topic_arn
   critical_sns_topic_arn                           = var.critical_sns_topic_arn
+  deploy_api_gateway                               = var.deploy_api_gateway
   deploy_alarms                                    = var.deploy_alarms
   domain_alias                                     = var.domain_alias
   private_certificate_arn                          = var.private_certificate_arn

@@ -1,10 +1,13 @@
 locals {
-  is_private_endpoint = var.cirrus_api_rest_type == "PRIVATE" ? true : false
+  is_private_endpoint         = var.cirrus_api_rest_type == "PRIVATE" ? true : false
+  deploy_api                  = var.deploy_api_gateway ? 1 : 0
+  deploy_private_api_endpoint = var.deploy_api_gateway && local.is_private_endpoint ? 1 : 0
+  deploy_api_alarms           = var.deploy_api_gateway && var.deploy_alarms ? 1 : 0
+  deploy_api_domain_name      = var.deploy_api_gateway && local.is_private_endpoint && var.domain_alias != "" && var.private_certificate_arn != "" ? 1 : 0
 }
 
-
 resource "aws_iam_role" "cirrus_api_lambda_role" {
-  count       = var.deploy_api_gateway ? 1 : 0
+  count       = local.deploy_api
   name_prefix = "${var.resource_prefix}-api-role-"
 
   assume_role_policy = <<EOF
@@ -25,7 +28,7 @@ EOF
 }
 
 resource "aws_iam_policy" "cirrus_api_lambda_policy" {
-  count       = var.deploy_api_gateway ? 1 : 0
+  count       = local.deploy_api
   name_prefix = "${var.resource_prefix}-api-policy-"
 
   # TODO: the secret thing is probably not gonna work without some fixes in boto3utils...
@@ -86,19 +89,19 @@ EOF
 }
 
 resource "aws_iam_role_policy_attachment" "cirrus_api_lambda_role_policy_attachment1" {
-  count      = var.deploy_api_gateway ? 1 : 0
+  count      = local.deploy_api
   role       = aws_iam_role.cirrus_api_lambda_role[0].name
   policy_arn = aws_iam_policy.cirrus_api_lambda_policy[0].arn
 }
 
 resource "aws_iam_role_policy_attachment" "cirrus_api_lambda_role_policy_attachment2" {
-  count      = var.deploy_api_gateway ? 1 : 0
+  count      = local.deploy_api
   role       = aws_iam_role.cirrus_api_lambda_role[0].name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 resource "aws_lambda_function" "cirrus_api" {
-  count            = var.deploy_api_gateway ? 1 : 0
+  count            = local.deploy_api
   filename         = var.cirrus_lambda_zip_filepath
   function_name    = "${var.resource_prefix}-api"
   description      = "Cirrus API Lambda"
@@ -128,7 +131,7 @@ resource "aws_lambda_function" "cirrus_api" {
 }
 
 resource "aws_security_group" "cirrus_api_gateway_private_vpce" {
-  count = var.deploy_api_gateway && local.is_private_endpoint ? 1 : 0
+  count = local.deploy_private_api_endpoint
 
   name_prefix = "${var.resource_prefix}-apigw-vcpe-sg-"
   description = "Allows TCP inbound on 443 from VPC private subnet CIDRs"
@@ -137,7 +140,7 @@ resource "aws_security_group" "cirrus_api_gateway_private_vpce" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "cirrus_api_gateway_private_vpce" {
-  for_each = var.deploy_api_gateway && local.is_private_endpoint ? { for s in data.aws_subnet.selected : s.id => s } : {}
+  for_each = local.deploy_private_api_endpoint == 1 ? { for s in data.aws_subnet.selected : s.id => s } : {}
 
   security_group_id = aws_security_group.cirrus_api_gateway_private_vpce[0].id
   description       = "Allow TCP on 443 for subnet ${each.value.id}"
@@ -149,7 +152,7 @@ resource "aws_vpc_security_group_ingress_rule" "cirrus_api_gateway_private_vpce"
 }
 
 resource "aws_vpc_endpoint" "cirrus_api_gateway_private" {
-  count = var.deploy_api_gateway && local.is_private_endpoint ? 1 : 0
+  count = local.deploy_private_api_endpoint
 
   service_name        = "com.amazonaws.${data.aws_region.current.name}.execute-api"
   vpc_id              = var.vpc_id
@@ -169,7 +172,7 @@ resource "aws_vpc_endpoint" "cirrus_api_gateway_private" {
 }
 
 resource "aws_api_gateway_rest_api" "cirrus_api_gateway" {
-  count = var.deploy_api_gateway ? 1 : 0
+  count = local.deploy_api
   name  = "${var.resource_prefix}-api"
 
   endpoint_configuration {
@@ -179,7 +182,7 @@ resource "aws_api_gateway_rest_api" "cirrus_api_gateway" {
 }
 
 data "aws_iam_policy_document" "cirrus_api_gateway_private" {
-  count = var.deploy_api_gateway && local.is_private_endpoint ? 1 : 0
+  count = local.deploy_private_api_endpoint
 
   statement {
     sid       = "DenyApiInvokeForNonVpceTraffic"
@@ -213,14 +216,14 @@ data "aws_iam_policy_document" "cirrus_api_gateway_private" {
 }
 
 resource "aws_api_gateway_rest_api_policy" "cirrus_api_gateway_private" {
-  count = var.deploy_api_gateway && local.is_private_endpoint ? 1 : 0
+  count = local.deploy_private_api_endpoint
 
   rest_api_id = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
   policy      = data.aws_iam_policy_document.cirrus_api_gateway_private[0].json
 }
 
 resource "aws_api_gateway_method" "cirrus_api_gateway_root_method" {
-  count         = var.deploy_api_gateway ? 1 : 0
+  count         = local.deploy_api
   rest_api_id   = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
   resource_id   = aws_api_gateway_rest_api.cirrus_api_gateway[0].root_resource_id
   http_method   = "GET"
@@ -228,7 +231,7 @@ resource "aws_api_gateway_method" "cirrus_api_gateway_root_method" {
 }
 
 resource "aws_api_gateway_integration" "cirrus_api_gateway_root_method_integration" {
-  count                   = var.deploy_api_gateway ? 1 : 0
+  count                   = local.deploy_api
   rest_api_id             = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
   resource_id             = aws_api_gateway_rest_api.cirrus_api_gateway[0].root_resource_id
   http_method             = aws_api_gateway_method.cirrus_api_gateway_root_method[0].http_method
@@ -238,14 +241,14 @@ resource "aws_api_gateway_integration" "cirrus_api_gateway_root_method_integrati
 }
 
 resource "aws_api_gateway_resource" "cirrus_api_gateway_proxy_resource" {
-  count       = var.deploy_api_gateway ? 1 : 0
+  count       = local.deploy_api
   rest_api_id = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
   parent_id   = aws_api_gateway_rest_api.cirrus_api_gateway[0].root_resource_id
   path_part   = "{proxy+}"
 }
 
 resource "aws_api_gateway_method" "cirrus_api_gateway_proxy_resource_method" {
-  count         = var.deploy_api_gateway ? 1 : 0
+  count         = local.deploy_api
   rest_api_id   = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
   resource_id   = aws_api_gateway_resource.cirrus_api_gateway_proxy_resource[0].id
   http_method   = "GET"
@@ -253,7 +256,7 @@ resource "aws_api_gateway_method" "cirrus_api_gateway_proxy_resource_method" {
 }
 
 resource "aws_api_gateway_integration" "cirrus_api_gateway_proxy_resource_method_integration" {
-  count                   = var.deploy_api_gateway ? 1 : 0
+  count                   = local.deploy_api
   rest_api_id             = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
   resource_id             = aws_api_gateway_resource.cirrus_api_gateway_proxy_resource[0].id
   http_method             = aws_api_gateway_method.cirrus_api_gateway_proxy_resource_method[0].http_method
@@ -263,7 +266,7 @@ resource "aws_api_gateway_integration" "cirrus_api_gateway_proxy_resource_method
 }
 
 resource "aws_api_gateway_deployment" "cirrus_api_gateway" {
-  count      = var.deploy_api_gateway ? 1 : 0
+  count = local.deploy_api
   depends_on = [
     aws_api_gateway_integration.cirrus_api_gateway_root_method_integration[0],
     aws_api_gateway_integration.cirrus_api_gateway_proxy_resource_method_integration[0],
@@ -279,7 +282,7 @@ resource "aws_api_gateway_deployment" "cirrus_api_gateway" {
 }
 
 resource "aws_cloudwatch_log_group" "cirrus_api_gateway_logs_group" {
-  count = var.deploy_api_gateway ? 1 : 0
+  count = local.deploy_api
   name  = "/aws/apigateway/${var.resource_prefix}-api-${aws_api_gateway_deployment.cirrus_api_gateway[0].rest_api_id}/${aws_api_gateway_deployment.cirrus_api_gateway[0].stage_name}"
 }
 
@@ -288,7 +291,7 @@ locals {
 }
 
 resource "null_resource" "enable_access_logs" {
-  count    = var.deploy_api_gateway ? 1 : 0
+  count = local.deploy_api
   triggers = {
     stage_name              = aws_api_gateway_deployment.cirrus_api_gateway[0].stage_name
     rest_api_id             = aws_api_gateway_deployment.cirrus_api_gateway[0].rest_api_id
@@ -310,7 +313,7 @@ EOF
 }
 
 resource "aws_lambda_permission" "cirrus_api_gateway_lambda_permission_root_resource" {
-  count         = var.deploy_api_gateway ? 1 : 0
+  count         = local.deploy_api
   statement_id  = "AllowExecutionFromAPIGatewayRootResource"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.cirrus_api[0].arn
@@ -320,7 +323,7 @@ resource "aws_lambda_permission" "cirrus_api_gateway_lambda_permission_root_reso
 }
 
 resource "aws_lambda_permission" "cirrus_api_gateway_lambda_permission_proxy_resource" {
-  count         = var.deploy_api_gateway ? 1 : 0
+  count         = local.deploy_api
   statement_id  = "AllowExecutionFromAPIGatewayProxyResource"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.cirrus_api[0].arn
@@ -330,7 +333,7 @@ resource "aws_lambda_permission" "cirrus_api_gateway_lambda_permission_proxy_res
 }
 
 resource "aws_cloudwatch_metric_alarm" "cirrus_api_lambda_errors_warning_alarm" {
-  count = var.deploy_api_gateway && var.deploy_alarms ? 1 : 0
+  count = local.deploy_api_alarms
 
   alarm_name                = "WARNING: ${var.resource_prefix}-api Lambda Errors Warning Alarm"
   comparison_operator       = "GreaterThanOrEqualToThreshold"
@@ -352,7 +355,7 @@ resource "aws_cloudwatch_metric_alarm" "cirrus_api_lambda_errors_warning_alarm" 
 }
 
 resource "aws_cloudwatch_metric_alarm" "cirrus_api_lambda_errors_critical_alarm" {
-  count = var.deploy_api_gateway && var.deploy_alarms ? 1 : 0
+  count = local.deploy_api_alarms
 
   alarm_name                = "CRITICAL: ${var.resource_prefix}-api Lambda Errors Critical Alarm"
   comparison_operator       = "GreaterThanOrEqualToThreshold"
@@ -374,7 +377,7 @@ resource "aws_cloudwatch_metric_alarm" "cirrus_api_lambda_errors_critical_alarm"
 }
 
 resource "aws_cloudwatch_metric_alarm" "cirrus_api_gw_errors_warning_alarm" {
-  count = var.deploy_api_gateway && var.deploy_alarms ? 1 : 0
+  count = local.deploy_api_alarms
 
   alarm_name                = "WARNING: ${aws_api_gateway_rest_api.cirrus_api_gateway[0].name} API Gateway 5XX Errors Warning Alarm"
   comparison_operator       = "GreaterThanOrEqualToThreshold"
@@ -391,16 +394,12 @@ resource "aws_cloudwatch_metric_alarm" "cirrus_api_gw_errors_warning_alarm" {
   insufficient_data_actions = []
 
   dimensions = {
-    FunctionName = aws_api_gateway_rest_api.cirrus_api_gateway.name
+    FunctionName = aws_api_gateway_rest_api.cirrus_api_gateway[0].name
   }
-  # TODO: This dimension should be ApiName not FunctionName. However, older versions of the aws provider do not support this.
-  # dimensions = {
-  #   ApiName = aws_api_gateway_rest_api.cirrus_api_gateway[0].name
-  # }
 }
 
 resource "aws_cloudwatch_metric_alarm" "cirrus_api_gw_errors_critical_alarm" {
-  count = var.deploy_api_gateway && var.deploy_alarms ? 1 : 0
+  count                     = local.deploy_api_alarms
   alarm_name                = "CRITICAL: ${aws_api_gateway_rest_api.cirrus_api_gateway[0].name} API Gateway 5XX Errors Critical Alarm"
   comparison_operator       = "GreaterThanOrEqualToThreshold"
   evaluation_periods        = 5
@@ -416,16 +415,12 @@ resource "aws_cloudwatch_metric_alarm" "cirrus_api_gw_errors_critical_alarm" {
   insufficient_data_actions = []
 
   dimensions = {
-    FunctionName = aws_api_gateway_rest_api.cirrus_api_gateway.name
+    FunctionName = aws_api_gateway_rest_api.cirrus_api_gateway[0].name
   }
-  # TODO: This dimension should be ApiName not FunctionName. However, older versions of the aws provider do not support this.
-  # dimensions = {
-  #   ApiName = aws_api_gateway_rest_api.cirrus_api_gateway[0].name
-  # }
 }
 
 resource "aws_api_gateway_domain_name" "cirrus_api_gateway_domain_name" {
-  count           = var.deploy_api_gateway && local.is_private_endpoint == true && var.domain_alias != "" && var.private_certificate_arn != "" ? 1 : 0
+  count           = local.deploy_api_domain_name
   certificate_arn = var.private_certificate_arn
   domain_name     = var.domain_alias
 
@@ -460,14 +455,14 @@ EOF
 }
 
 resource "aws_api_gateway_domain_name_access_association" "cirrus_api_gateway_domain_name_access_association" {
-  count                          = var.deploy_api_gateway && local.is_private_endpoint == true && var.domain_alias != "" && var.private_certificate_arn != "" ? 1 : 0
+  count                          = local.deploy_api_domain_name
   access_association_source      = aws_vpc_endpoint.cirrus_api_gateway_private[0].id
   access_association_source_type = "VPCE"
   domain_name_arn                = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].arn
 }
 
 resource "aws_api_gateway_base_path_mapping" "cirrus_api_gateway_domain_mapping" {
-  count          = var.deploy_api_gateway && local.is_private_endpoint == true && var.domain_alias != "" && var.private_certificate_arn != "" ? 1 : 0
+  count          = local.deploy_api_domain_name
   domain_name    = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].domain_name
   domain_name_id = aws_api_gateway_domain_name.cirrus_api_gateway_domain_name[0].domain_name_id
   api_id         = aws_api_gateway_rest_api.cirrus_api_gateway[0].id
