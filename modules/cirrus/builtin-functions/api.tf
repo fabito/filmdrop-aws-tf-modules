@@ -7,7 +7,6 @@ locals {
 }
 
 resource "aws_iam_role" "cirrus_api_lambda_role" {
-  count       = local.deploy_api
   name_prefix = "${var.resource_prefix}-api-role-"
 
   assume_role_policy = <<EOF
@@ -28,7 +27,6 @@ EOF
 }
 
 resource "aws_iam_policy" "cirrus_api_lambda_policy" {
-  count       = local.deploy_api
   name_prefix = "${var.resource_prefix}-api-policy-"
 
   # TODO: the secret thing is probably not gonna work without some fixes in boto3utils...
@@ -89,23 +87,20 @@ EOF
 }
 
 resource "aws_iam_role_policy_attachment" "cirrus_api_lambda_role_policy_attachment1" {
-  count      = local.deploy_api
-  role       = aws_iam_role.cirrus_api_lambda_role[0].name
-  policy_arn = aws_iam_policy.cirrus_api_lambda_policy[0].arn
+  role       = aws_iam_role.cirrus_api_lambda_role.name
+  policy_arn = aws_iam_policy.cirrus_api_lambda_policy.arn
 }
 
 resource "aws_iam_role_policy_attachment" "cirrus_api_lambda_role_policy_attachment2" {
-  count      = local.deploy_api
-  role       = aws_iam_role.cirrus_api_lambda_role[0].name
+  role       = aws_iam_role.cirrus_api_lambda_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 resource "aws_lambda_function" "cirrus_api" {
-  count            = local.deploy_api
   filename         = var.cirrus_lambda_zip_filepath
   function_name    = "${var.resource_prefix}-api"
   description      = "Cirrus API Lambda"
-  role             = aws_iam_role.cirrus_api_lambda_role[0].arn
+  role             = aws_iam_role.cirrus_api_lambda_role.arn
   handler          = "api.lambda_handler"
   source_code_hash = filebase64sha256(var.cirrus_lambda_zip_filepath)
   runtime          = "python3.12"
@@ -316,7 +311,7 @@ resource "aws_lambda_permission" "cirrus_api_gateway_lambda_permission_root_reso
   count         = local.deploy_api
   statement_id  = "AllowExecutionFromAPIGatewayRootResource"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.cirrus_api[0].arn
+  function_name = aws_lambda_function.cirrus_api.arn
   principal     = "apigateway.amazonaws.com"
 
   source_arn = "arn:aws:execute-api:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.cirrus_api_gateway[0].id}/*/*"
@@ -326,7 +321,7 @@ resource "aws_lambda_permission" "cirrus_api_gateway_lambda_permission_proxy_res
   count         = local.deploy_api
   statement_id  = "AllowExecutionFromAPIGatewayProxyResource"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.cirrus_api[0].arn
+  function_name = aws_lambda_function.cirrus_api.arn
   principal     = "apigateway.amazonaws.com"
 
   source_arn = "arn:aws:execute-api:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${aws_api_gateway_rest_api.cirrus_api_gateway[0].id}/*/*${aws_api_gateway_resource.cirrus_api_gateway_proxy_resource[0].path}"
@@ -350,7 +345,7 @@ resource "aws_cloudwatch_metric_alarm" "cirrus_api_lambda_errors_warning_alarm" 
   insufficient_data_actions = []
 
   dimensions = {
-    FunctionName = aws_lambda_function.cirrus_api[0].function_name
+    FunctionName = aws_lambda_function.cirrus_api.function_name
   }
 }
 
@@ -372,7 +367,7 @@ resource "aws_cloudwatch_metric_alarm" "cirrus_api_lambda_errors_critical_alarm"
   insufficient_data_actions = []
 
   dimensions = {
-    FunctionName = aws_lambda_function.cirrus_api[0].function_name
+    FunctionName = aws_lambda_function.cirrus_api.function_name
   }
 }
 

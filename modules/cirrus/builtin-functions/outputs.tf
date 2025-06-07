@@ -1,3 +1,7 @@
+output "api_lambda_function_arn" {
+  value = aws_lambda_function.cirrus_api.arn
+}
+
 output "pre_batch_lambda_function_arn" {
   value = aws_lambda_function.cirrus_pre_batch.arn
 }

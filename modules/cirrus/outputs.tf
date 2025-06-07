@@ -91,3 +91,7 @@ output "cirrus_workflow_state_machine_role_arns" {
     workflow_name => workflow_output.state_machine_role_arn
   }
 }
+
+output "cirrus_api_lambda_function_arn" {
+  value = module.builtin_functions.api_lambda_function_arn
+}
